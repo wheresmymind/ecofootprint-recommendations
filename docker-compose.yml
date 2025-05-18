@@ -1,0 +1,17 @@
+# docker-compose.yml
+version: '3.8' 
+
+services:
+  web: 
+    build: .
+    ports:
+      - "8000:8000" 
+    volumes:
+      
+      - ./app:/app/app
+    env_file:
+      - .env 
+    #   - GEMINI_API_KEY=${GEMINI_API_KEY} # Otra forma de pasarla si está definida en el entorno del host
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload # Comando para desarrollo con reload
+    # Para producción, el CMD del Dockerfile se usaría, o podrías definir un comando sin --reload aquí:
+    # command: uvicorn app.main:app --host 0.0.0.0 --port 8000
