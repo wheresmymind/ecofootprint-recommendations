@@ -5,46 +5,33 @@ from app.api.v1.schemas.footprint import FootprintInputSchema
 from app.api.v1.schemas.recommendation import RecommendationOutputSchema # Asumo que este es tu schema actual
 from app.services.recommendation_service import get_recommendations_for_footprint
 import logging
-import jwt # Para decodificar JWT sin validación completa (si es necesario para inspección simple)
-from jose import jwt as jose_jwt # Para decodificar con más opciones, aunque no validaremos firma aquí
-from jose.exceptions import JWTError # Para capturar errores de decodificación de jose
+import jwt 
+from jose import jwt as jose_jwt 
+from jose.exceptions import JWTError 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Esquema de seguridad para el token Bearer
-# 'auto_error=True' significa que si el token no está o es inválido, FastAPI devolverá un error 401/403 automáticamente.
-# Si quieres manejar la ausencia de token de forma personalizada, puedes poner auto_error=False y verificar si token es None.
 oauth2_scheme = HTTPBearer(auto_error=True)
 
 
 # Función simple para decodificar el token (SIN VALIDACIÓN DE FIRMA)
-# ¡ADVERTENCIA! Esto es solo para inspeccionar el payload.
-# En un entorno de producción, DEBES validar la firma del token.
 def decode_jwt_payload_insecure(token: str) -> dict | None:
     try:
         # Decodifica el token sin verificar la firma. Útil solo para extraer claims
-        # si confías en que la validación de firma se hizo en otro lugar (ej. API Gateway)
-        # o si solo necesitas inspeccionar un token que TÚ generaste.
-        # Para python-jwt:
-        # payload = jwt.decode(token, options={"verify_signature": False, "verify_aud": False})
-
-        # Para python-jose (más control, pero aún sin verificar firma aquí):
-        # El tercer argumento 'key' es None, algorithms es una lista de los que podría tener.
-        # options se usa para desactivar validaciones específicas.
         payload = jose_jwt.decode(
             token,
-            key=None, # No se proporciona clave para validación de firma
-            algorithms=["HS256", "RS256"], # Lista de algoritmos que podría usar el token
+            key=None, 
+            algorithms=["HS256", "RS256"], 
             options={
                 "verify_signature": False,
-                "verify_aud": False, # Desactivar verificación de audiencia si no es necesaria
-                "verify_iat": False, # Desactivar verificación de 'issued at'
-                "verify_exp": False, # ¡CUIDADO! Desactivar verificación de expiración es riesgoso
-                "verify_nbf": False, # Desactivar verificación de 'not before'
-                "verify_iss": False, # Desactivar verificación de emisor
-                "verify_sub": False, # Desactivar verificación de sujeto
-                "require_exp": False, # No requerir que 'exp' esté presente
+                "verify_aud": False, 
+                "verify_iat": False, 
+                "verify_exp": False, 
+                "verify_nbf": False, 
+                "verify_iss": False, 
+                "verify_sub": False, 
+                "require_exp": False, 
                 "require_iat": False,
                 "require_nbf": False,
             }
