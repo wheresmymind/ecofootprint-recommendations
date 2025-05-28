@@ -1,18 +1,23 @@
 # app/api/v1/schemas/recommendation.py
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional
 
-class Recommendation(BaseModel):
+# Modelo para la recomendación global (y potencialmente para un error genérico)
+class FullRecommendation(BaseModel):
     category: str = Field(..., description="La categoría de la recomendación, ej: Transporte, General.")
     suggestion: str = Field(..., description="El texto de la recomendación, incluyendo una breve explicación.")
 
+# Nuevo modelo para las sugerencias específicas por categoría (solo 'suggestion')
+class CategorySpecificSuggestion(BaseModel):
+    suggestion: str = Field(..., description="El texto de la recomendación específica para la categoría, incluyendo su explicación.")
+
 class RecommendationsByCategory(BaseModel):
-    transport: List[Recommendation] = Field(..., description="Recomendaciones para Transporte.")
-    food: List[Recommendation] = Field(..., description="Recomendaciones para Alimentación.")
-    energy: List[Recommendation] = Field(..., description="Recomendaciones para Consumo Energético.")
-    waste: List[Recommendation] = Field(..., description="Recomendaciones para Generación de Residuos.")
+    transport: List[CategorySpecificSuggestion] = Field(..., description="Sugerencias para Transporte.")
+    food: List[CategorySpecificSuggestion] = Field(..., description="Sugerencias para Alimentación.")
+    energy: List[CategorySpecificSuggestion] = Field(..., description="Sugerencias para Consumo Energético.")
+    waste: List[CategorySpecificSuggestion] = Field(..., description="Sugerencias para Generación de Residuos.")
 
 class RecommendationOutputSchema(BaseModel):
-    global_recommendation: Recommendation = Field(..., description="Una recomendación general de alto impacto.")
-    category_recommendations: RecommendationsByCategory = Field(..., description="Dos recomendaciones específicas para cada categoría principal.")
-    notes: Optional[str] = None # Para cualquier nota adicional o mensaje de error del proceso.
+    global_recommendation: FullRecommendation = Field(..., description="Una recomendación general de alto impacto.")
+    category_recommendations: RecommendationsByCategory = Field(..., description="Dos sugerencias específicas para cada categoría principal.")
+    notes: Optional[str] = None
