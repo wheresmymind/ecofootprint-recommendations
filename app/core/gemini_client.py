@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 try:
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-2.5-pro-preview-03-25') # Or specify a newer model if available
+    model = genai.GenerativeModel('gemini-2.0-flash') # Or specify a newer model if available
     logger.info("Gemini client configured successfully.")
 except Exception as e:
     logger.error(f"Failed to configure Gemini client: {e}")
