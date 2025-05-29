@@ -5,7 +5,7 @@ from app.api.v1.schemas.recommendation import RecommendationOutputSchema
 
 logger = logging.getLogger(__name__)
 
-TARGET_SERVICE_URL = "http://localhost:5173/" # La URL del servicio destino
+TARGET_SERVICE_URL = "https://fake-data-wvx9.onrender.com/enviar_calculos" # La URL del servicio destino
 
 async def post_recommendations_to_external_service(recommendations_payload: RecommendationOutputSchema):
     """
