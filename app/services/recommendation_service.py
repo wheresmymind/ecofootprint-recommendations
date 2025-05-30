@@ -1,7 +1,7 @@
 # app/services/recommendation_service.py
 from app.api.v1.schemas.footprint import FootprintInputSchema
 from app.core.gemini_client import generate_text_from_gemini
-from typing import List
+from typing import List, Optional
 from app.api.v1.schemas.recommendation import FullRecommendation, CategorySpecificSuggestion, RecommendationsByCategory, RecommendationOutputSchema
 from app.core.http_client import post_recommendations_to_external_service
 from app.db.database import insert_recommendations
@@ -216,60 +216,79 @@ def _parse_gemini_response_structured(response_text: str | None) -> Recommendati
         error_cat_recs = RecommendationsByCategory(**error_cat_recs_data)
         return RecommendationOutputSchema(global_recommendation=error_global_rec, category_recommendations=error_cat_recs, notes=notes)
 
-
 async def get_recommendations_for_footprint(
     footprint_data: FootprintInputSchema,
-    user_id_from_token: str
+    user_id_from_token: str # Asumo que esto se obtiene de la autenticación
 ) -> RecommendationOutputSchema:
     logger.info(f"Procesando recomendaciones para usuario: {user_id_from_token}, fecha huella: {footprint_data.date}")
-    # ... (Lógica de Gemini y parseo como antes) ...
+
+    # 1. Generar el prompt para Gemini
+    #    _create_prompt debe estar adaptado para solicitar la estructura que _parse_gemini_response_structured espera.
     prompt = _create_prompt(footprint_data)
+    logger.debug(f"Generated Gemini Prompt (Structured Output Request):\n{prompt}")
+
+    # 2. Obtener respuesta de Gemini
     gemini_response_text = await generate_text_from_gemini(prompt)
-    parsed_output = _parse_gemini_response_structured(gemini_response_text)
+    logger.debug(f"Received Gemini Response Text (Structured):\n{gemini_response_text}")
 
-    if parsed_output is None:
-        # ... (manejo de error de parseo, devolver error_parsed_output) ...
-        logger.error("El parseo de la respuesta de Gemini devolvió None, creando respuesta de error por defecto.")
-        # (código de creación de error_global_rec y error_cat_recs como antes)
-        # ...
-        return # O el objeto de error
-    
-    # Si hay un error indicado por el parser, no continuar con guardado ni post externo
-    if (parsed_output.notes and ("error" in parsed_output.notes.lower() or "fallo" in parsed_output.notes.lower())) or \
+    # 3. Parsear la respuesta de Gemini al nuevo RecommendationOutputSchema
+    #    _parse_gemini_response_structured debe estar actualizada para manejar la nueva estructura de schemas
+    #    y devolver un RecommendationOutputSchema.
+    parsed_output: Optional[RecommendationOutputSchema] = _parse_gemini_response_structured(gemini_response_text)
+
+    # Manejo si el parseo falla y devuelve None (o una estructura con errores)
+    if parsed_output is None or \
+       (parsed_output.notes and ("error" in parsed_output.notes.lower() or "fallo" in parsed_output.notes.lower())) or \
        (parsed_output.global_recommendation and parsed_output.global_recommendation.category.lower() == "error"):
-        logger.warning("Error detectado en parsed_output. No se guardará en BD ni se enviará a servicio externo.")
-        return parsed_output # Devolver el output con las notas de error
 
-    # Convertir fecha para la BD
+        logger.warning("Error detectado en la respuesta parseada de Gemini. No se guardará en BD.")
+        # Si parsed_output es None, necesitamos crear un objeto de error para devolver
+        if parsed_output is None:
+            error_text = "Fallo interno: el parseo de la respuesta de IA devolvió None."
+            logger.error(error_text)
+            error_global_rec = FullRecommendation(category="Error", suggestion=error_text)
+            # Crear RecommendationsByCategory vacío o con marcadores de error si se prefiere
+            from app.api.v1.schemas.recommendation import RecommendationsByCategory # Importar si no está ya
+            empty_cat_recs = RecommendationsByCategory(transport=[], food=[], energy=[], waste=[])
+            return RecommendationOutputSchema(
+                global_recommendation=error_global_rec,
+                category_recommendations=empty_cat_recs,
+                notes=error_text
+            )
+        return parsed_output # Devolver el output con las notas de error ya incluidas por el parser
+
+    # 4. Convertir la fecha del input para la base de datos
     try:
-        calculation_dt_obj = datetime.strptime(footprint_data.date, "%Y-%m-%d").date()
-    except ValueError:
-        # ... (manejo de error de fecha, añadir nota y devolver) ...
-        logger.error(f"Formato de fecha inválido: {footprint_data.date}. No se guardará en BD ni se enviará a servicio externo.")
-        if parsed_output:
-            parsed_output.notes = (parsed_output.notes + " | " if parsed_output.notes else "") + "Advertencia: Fecha de cálculo inválida, no se procesaron acciones posteriores."
+        if isinstance(footprint_data.date, str):
+             calculation_dt_obj = datetime.strptime(footprint_data.date, "%Y-%m-%d").date()
+        elif isinstance(footprint_data.date, date): # Si ya es un objeto date
+             calculation_dt_obj = footprint_data.date
+        else:
+            # Manejar caso inesperado, podría ser un error de validación del input
+            raise ValueError(f"Tipo de fecha no esperado para footprint_data.date: {type(footprint_data.date)}")
+    except ValueError as e:
+        error_msg = f"Formato de fecha inválido: {footprint_data.date}. Error: {e}. No se guardará en BD."
+        logger.error(error_msg)
+        parsed_output.notes = (parsed_output.notes + " | " if parsed_output.notes else "") + error_msg
         return parsed_output
 
-
-    # Guardar en base de datos
+    # 5. Guardar las recomendaciones en la base de datos
     logger.info(f"Intentando guardar recomendaciones para el usuario {user_id_from_token} en la base de datos.")
     save_to_db_successful = insert_recommendations(
         user_id=user_id_from_token,
         calculation_date=calculation_dt_obj,
-        recommendations=parsed_output
+        recommendations=parsed_output # parsed_output es del tipo RecommendationOutputSchema
     )
+
     if not save_to_db_successful:
-        logger.warning(f"No se pudieron guardar las recomendaciones en la BD para el usuario {user_id_from_token}. Se continuará con el envío al servicio externo.")
-        if parsed_output:
-             parsed_output.notes = (parsed_output.notes + " | " if parsed_output.notes else "") + "Advertencia: No se pudieron guardar estas recomendaciones para su historial."
+        warning_msg = f"No se pudieron guardar las recomendaciones en la BD para el usuario {user_id_from_token}."
+        logger.warning(warning_msg)
+        parsed_output.notes = (parsed_output.notes + " | " if parsed_output.notes else "") + warning_msg
     else:
         logger.info("Recomendaciones guardadas en BD exitosamente.")
 
-
-    # Enviar al servicio externo DESPUÉS de que todo lo demás (incluyendo BD) se haya intentado.
-    # Se envía el 'parsed_output' que es del tipo RecommendationOutputSchema.
-    logger.info(f"Intentando enviar recomendaciones al servicio externo para el usuario {user_id_from_token}.")
-    await post_recommendations_to_external_service(parsed_output)
+    # 6. (Opcional) Enviar a servicio externo si es necesario
+    # await post_recommendations_to_external_service(parsed_output)
 
     if parsed_output.notes:
          logger.warning(f"Notas finales del proceso de recomendación: {parsed_output.notes}")

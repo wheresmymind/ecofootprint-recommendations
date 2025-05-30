@@ -1,11 +1,12 @@
 # app/db/database.py
+from typing import Optional
 import psycopg # O import psycopg2
 from psycopg.rows import dict_row # O from psycopg2.extras import RealDictCursor para psycopg2
 from psycopg.conninfo import make_conninfo # Para psycopg
 from app.core.config import settings
 import logging
 import json # Para convertir el payload de recomendaciones a JSON string para la BD
-from app.api.v1.schemas.recommendation import RecommendationOutputSchema # Asumiendo tu schema de salida
+from app.api.v1.schemas.recommendation import CategorySpecificSuggestion, RecommendationOutputSchema # Asumiendo tu schema de salida
 from datetime import date
 
 logging.basicConfig(level=logging.INFO)
@@ -57,10 +58,10 @@ def get_db_connection():
 
 def insert_recommendations(
     user_id: str,
-    calculation_date: date, # Usar el tipo date de datetime
-    recommendations: RecommendationOutputSchema
+    calculation_date: date,
+    recommendations: RecommendationOutputSchema # Usa el schema actualizado
 ) -> bool:
-    """Inserta las recomendaciones para un usuario en la base de datos."""
+    """Inserta las recomendaciones (JSON completo y desglosado) para un usuario."""
     if not DATABASE_URL:
         logger.error("No se puede insertar en la BD: DATABASE_URL no está configurada.")
         return False
@@ -69,30 +70,77 @@ def insert_recommendations(
     try:
         conn = get_db_connection()
         if conn is None:
-            return False # No se pudo obtener la conexión
+            return False
 
-        # Convertir el objeto Pydantic de recomendaciones a un diccionario y luego a JSON string
-        # Usamos .model_dump() para Pydantic v2, o .dict() para Pydantic v1
-        recommendations_json_str = recommendations.model_dump_json(indent=2) # o json.dumps(recommendations.dict())
+        recommendations_json_str = recommendations.model_dump_json(indent=2)
+
+        # Extraer las sugerencias individuales
+        # La global_recommendation es del tipo FullRecommendation, así que tiene .suggestion
+        global_suggestion = recommendations.global_recommendation.suggestion if recommendations.global_recommendation else None
+
+        # Las recomendaciones por categoría ahora contienen objetos CategorySpecificSuggestion
+        def get_specific_suggestion_or_none(sug_list: list[CategorySpecificSuggestion], index: int) -> Optional[str]:
+            return sug_list[index].suggestion if len(sug_list) > index and sug_list[index] else None
+
+        transport_sugs = recommendations.category_recommendations.transport
+        transport_sug1 = get_specific_suggestion_or_none(transport_sugs, 0)
+        transport_sug2 = get_specific_suggestion_or_none(transport_sugs, 1)
+
+        food_sugs = recommendations.category_recommendations.food
+        food_sug1 = get_specific_suggestion_or_none(food_sugs, 0)
+        food_sug2 = get_specific_suggestion_or_none(food_sugs, 1)
+
+        energy_sugs = recommendations.category_recommendations.energy
+        energy_sug1 = get_specific_suggestion_or_none(energy_sugs, 0)
+        energy_sug2 = get_specific_suggestion_or_none(energy_sugs, 1)
+
+        waste_sugs = recommendations.category_recommendations.waste
+        waste_sug1 = get_specific_suggestion_or_none(waste_sugs, 0)
+        waste_sug2 = get_specific_suggestion_or_none(waste_sugs, 1)
 
         sql = """
-            INSERT INTO user_recommendations (user_id, calculation_date, recommendations_payload)
-            VALUES (%s, %s, %s);
+            INSERT INTO user_recommendations (
+                user_id,
+                calculation_date,
+                recommendations_payload,
+                global_rec_suggestion,
+                transport_rec1_suggestion,
+                transport_rec2_suggestion,
+                food_rec1_suggestion,
+                food_rec2_suggestion,
+                energy_rec1_suggestion,
+                energy_rec2_suggestion,
+                waste_rec1_suggestion,
+                waste_rec2_suggestion
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         with conn.cursor() as cur:
-            # Para psycopg (v3)
-            cur.execute(sql, (user_id, calculation_date, recommendations_json_str))
-            # Para psycopg2
-            # cur.execute(sql, (user_id, calculation_date, recommendations_json_str))
-            conn.commit() # Asegurarse de hacer commit de la transacción
-        logger.info(f"Recomendaciones insertadas para el usuario {user_id} en la fecha {calculation_date}.")
+            cur.execute(sql, (
+                user_id,
+                calculation_date,
+                recommendations_json_str,
+                global_suggestion,
+                transport_sug1,
+                transport_sug2,
+                food_sug1,
+                food_sug2,
+                energy_sug1,
+                energy_sug2,
+                waste_sug1,
+                waste_sug2
+            ))
+            conn.commit()
+        logger.info(f"Recomendaciones (completo y desglosado) insertadas para el usuario {user_id} en la fecha {calculation_date}.")
         return True
     except Exception as e:
-        logger.error(f"Error al insertar recomendaciones en la base de datos para {user_id}: {e}")
+        logger.error(f"Error al insertar recomendaciones desglosadas en la base de datos para {user_id}: {e}")
         if conn:
-            conn.rollback() # Revertir en caso de error
+            conn.rollback()
         return False
     finally:
         if conn:
             conn.close()
             logger.info("Conexión a la base de datos cerrada.")
+
+
