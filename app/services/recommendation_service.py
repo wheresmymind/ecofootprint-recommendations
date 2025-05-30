@@ -218,7 +218,7 @@ def _parse_gemini_response_structured(response_text: str | None) -> Recommendati
 
 async def get_recommendations_for_footprint(
     footprint_data: FootprintInputSchema,
-    user_id_from_token: str # Asumo que esto se obtiene de la autenticación
+    user_id_from_token: str 
 ) -> RecommendationOutputSchema:
     logger.info(f"Procesando recomendaciones para usuario: {user_id_from_token}, fecha huella: {footprint_data.date}")
 
