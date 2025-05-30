@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def _create_prompt(data: FootprintInputSchema) -> str:
     """
     Crea un prompt detallado para la API de Gemini, solicitando una recomendación global
-    y dos sugerencias por categoría (solo con 'suggestion'), con explicaciones. (Versión en Español)
+    y dos sugerencias por categoría (solo con 'suggestion'), con explicaciones. 
     """
 
     # (contextual_summary se mantiene igual que en la versión anterior en español)
@@ -288,7 +288,7 @@ async def get_recommendations_for_footprint(
         logger.info("Recomendaciones guardadas en BD exitosamente.")
 
     # 6. (Opcional) Enviar a servicio externo si es necesario
-    # await post_recommendations_to_external_service(parsed_output)
+    await post_recommendations_to_external_service(parsed_output)
 
     if parsed_output.notes:
          logger.warning(f"Notas finales del proceso de recomendación: {parsed_output.notes}")
